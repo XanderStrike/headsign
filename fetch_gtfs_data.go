@@ -3,61 +3,23 @@ package main
 import (
 	"encoding/csv"
 	"encoding/json"
+
 	"fmt"
 	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"strconv" // For converting protobuf timestamps (uint64) to string
 	"strings"
 	"sync"
 	"time"
+
+	gtfsrealtime "github.com/MobilityData/gtfs-realtime-bindings/golang/gtfs"
+	"google.golang.org/protobuf/proto"
 )
 
-// Structs to match the JSON structure from GTFS-RT
-type GtfsResponse struct {
-	Header struct {
-		GtfsRealtimeVersion string `json:"gtfsRealtimeVersion"`
-		Incrementality      string `json:"incrementality"`
-		Timestamp           string `json:"timestamp"`
-	} `json:"header"`
-	Entity []Entity `json:"entity"`
-}
-
-type Entity struct {
-	ID      string  `json:"id"`
-	Vehicle Vehicle `json:"vehicle"`
-}
-
-type Vehicle struct {
-	Trip     *Trip     `json:"trip,omitempty"`
-	Position *Position `json:"position,omitempty"`
-	Vehicle  struct {
-		ID    string `json:"id"`
-		Label string `json:"label"`
-	} `json:"vehicle"`
-	CurrentStopSequence int    `json:"currentStopSequence,omitempty"`
-	CurrentStatus       string `json:"currentStatus,omitempty"`
-	Timestamp           string `json:"timestamp,omitempty"`
-	StopID              string `json:"stopId,omitempty"`
-}
-
-type Trip struct {
-	TripID               string `json:"tripId"`
-	StartTime            string `json:"startTime"`
-	StartDate            string `json:"startDate"`
-	ScheduleRelationship string `json:"scheduleRelationship"`
-	RouteID              string `json:"routeId"`
-	DirectionID          int    `json:"directionId"`
-}
-
-type Position struct {
-	Latitude  float64 `json:"latitude"`
-	Longitude float64 `json:"longitude"`
-	Speed     float64 `json:"speed,omitempty"`
-}
-
-// VehicleData struct for our JSON endpoint
+// VehicleData struct for our JSON endpoint (remains as is for now)
 type VehicleData struct {
 	ID                  string  `json:"id"`
 	Label               string  `json:"label"`
@@ -101,7 +63,7 @@ var tmpl *template.Template
 var swiftlyAPIKey string // To store the API key from env
 
 const (
-	gtfsURL        = "https://api.goswift.ly/real-time/lametro/gtfs-rt-vehicle-positions?format=json"
+	gtfsURL        = "https://api.goswift.ly/real-time/lametro/gtfs-rt-vehicle-positions"
 	cacheDuration  = 10 * time.Second // Adjusted to be just below 180 requests per 15 minutes (1 req / 5 sec)
 	routesFilePath = "/Users/xander/workspace/headsign/gtfs_bus/routes.txt"
 )
@@ -213,7 +175,7 @@ func fetchAndProcessGTFSData(apiKey string) ([]VehicleData, error) {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/x-protobuf") // Changed to protobuf
 	req.Header.Set("Authorization", apiKey)
 
 	resp, err := client.Do(req)
@@ -232,43 +194,69 @@ func fetchAndProcessGTFSData(apiKey string) ([]VehicleData, error) {
 		return nil, fmt.Errorf("error reading response body: %w", err)
 	}
 
-	var gtfsData GtfsResponse
-	err = json.Unmarshal(body, &gtfsData)
+	gtfsData := &gtfsrealtime.FeedMessage{}
+	err = proto.Unmarshal(body, gtfsData)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling JSON: %w", err)
+		return nil, fmt.Errorf("error unmarshalling protobuf: %w", err)
 	}
 
 	var processedVehicles []VehicleData
-	for _, entity := range gtfsData.Entity {
-		if entity.Vehicle.Trip != nil && entity.Vehicle.Position != nil {
-			label := entity.Vehicle.Vehicle.Label
+	for _, entity := range gtfsData.GetEntity() {
+		if entity.GetVehicle() != nil && entity.GetVehicle().GetTrip() != nil && entity.GetVehicle().GetPosition() != nil {
+			vehicle := entity.GetVehicle()
+			trip := vehicle.GetTrip()
+			position := vehicle.GetPosition()
+			vehicleDesc := vehicle.GetVehicle()
+
+			label := ""
+			if vehicleDesc != nil {
+				label = vehicleDesc.GetLabel()
+			}
 			if label == "" {
-				label = entity.ID // Use entity ID if vehicle label is empty
+				label = entity.GetId() // Use entity ID if vehicle label is empty
 			}
+
 			speed := 0.0
-			if entity.Vehicle.Position.Speed != 0 { // Check if Speed is non-zero
-				speed = entity.Vehicle.Position.Speed
+			if position.Speed != nil { // Check if Speed is non-zero (protobuf float fields are pointers)
+				speed = float64(position.GetSpeed())
 			}
+
+			vehicleTimestamp := ""
+			if vehicle.Timestamp != nil {
+				vehicleTimestamp = strconv.FormatUint(vehicle.GetTimestamp(), 10)
+			}
+
+			currentStopSequence := 0
+			if vehicle.CurrentStopSequence != nil {
+				currentStopSequence = int(vehicle.GetCurrentStopSequence())
+			}
+
+			var currentStatusStr string
+			if vehicle.CurrentStatus != nil {
+				currentStatusStr = vehicle.GetCurrentStatus().String()
+			}
+
 			vehicleData := VehicleData{
-				ID:                  entity.ID,
+				ID:                  entity.GetId(),
 				Label:               label,
-				Latitude:            entity.Vehicle.Position.Latitude,
-				Longitude:           entity.Vehicle.Position.Longitude,
+				Latitude:            float64(position.GetLatitude()),
+				Longitude:           float64(position.GetLongitude()),
 				Speed:               speed,
-				CurrentStopSequence: entity.Vehicle.CurrentStopSequence,
-				CurrentStatus:       entity.Vehicle.CurrentStatus,
-				VehicleTimestamp:    entity.Vehicle.Timestamp,
-				StopID:              entity.Vehicle.StopID,
+				CurrentStopSequence: currentStopSequence,
+				CurrentStatus:       currentStatusStr,
+				VehicleTimestamp:    vehicleTimestamp,
+				StopID:              vehicle.GetStopId(),
 			}
-			if entity.Vehicle.Trip != nil {
-				vehicleData.TripID = entity.Vehicle.Trip.TripID
-				vehicleData.RouteID = entity.Vehicle.Trip.RouteID
-				vehicleData.DirectionID = entity.Vehicle.Trip.DirectionID
-				vehicleData.StartDate = entity.Vehicle.Trip.StartDate
-				vehicleData.StartTime = entity.Vehicle.Trip.StartTime
+
+			if trip != nil {
+				vehicleData.TripID = trip.GetTripId()
+				vehicleData.RouteID = trip.GetRouteId()
+				vehicleData.DirectionID = int(trip.GetDirectionId())
+				vehicleData.StartDate = trip.GetStartDate()
+				vehicleData.StartTime = trip.GetStartTime()
 
 				// Populate route information if available
-				if routeInfo, ok := routesData[entity.Vehicle.Trip.RouteID]; ok {
+				if routeInfo, ok := routesData[trip.GetRouteId()]; ok {
 					vehicleData.RouteShortName = routeInfo.ShortName
 					vehicleData.RouteLongName = routeInfo.LongName
 					vehicleData.RouteColor = routeInfo.Color
