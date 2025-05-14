@@ -12,11 +12,23 @@
    crossorigin=""></script>
   <style>
     #map { height: 100vh; }
+    #countdown-overlay {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 5px 10px;
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      z-index: 1000; /* Ensure it's above the map tiles */
+      font-family: Arial, sans-serif;
+    }
   </style>
 </head>
 <body>
 
 <div id="map"></div>
+<div id="countdown-overlay">Next update in: <span id="countdown-timer">6</span>s</div>
 
 <script>
   var map = L.map('map').setView([34.0522, -118.2437], 10); // Centered on LA
@@ -25,7 +37,110 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
 
-  {{.Markers}}
+
+  var vehicleLayer = L.layerGroup().addTo(map);
+
+  // Define a red icon for high-speed vehicles
+  var highSpeedIcon = L.icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  });
+
+  // Define a smaller, translucent icon for normal-speed vehicles
+  var normalSpeedIcon = L.icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png', // Default blue marker
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/images/marker-shadow.png',
+    iconSize: [20, 33], // Smaller size (original is 25,41)
+    iconAnchor: [10, 33], // Adjusted anchor for smaller size
+    popupAnchor: [1, -30], // Adjusted popup anchor
+    shadowSize: [33, 33]  // Adjusted shadow size
+  });
+
+  const SPEED_THRESHOLD_MPH = 50;
+  const SPEED_THRESHOLD_MPS = SPEED_THRESHOLD_MPH * 0.44704; // Convert mph to m/s
+  const NORMAL_SPEED_OPACITY = 0.7;
+
+  // Fetch data initially and then every 6 seconds
+  const UPDATE_INTERVAL_SECONDS = 10;
+  let countdownValue = UPDATE_INTERVAL_SECONDS;
+  const countdownTimerElement = document.getElementById('countdown-timer');
+
+  function updateCountdownDisplay() {
+    countdownTimerElement.textContent = countdownValue;
+  }
+
+  function resetCountdown() {
+    countdownValue = UPDATE_INTERVAL_SECONDS;
+    updateCountdownDisplay();
+  }
+
+  setInterval(() => {
+    countdownValue--;
+    if (countdownValue < 0) {
+      // Should be reset by fetchVehicleData, but as a fallback:
+      countdownValue = UPDATE_INTERVAL_SECONDS; 
+    }
+    updateCountdownDisplay();
+  }, 1000); // Update countdown every second
+
+  function fetchVehicleData() {
+    fetch('/vehicledata')
+      .then(response => response.json())
+      .then(data => {
+        vehicleLayer.clearLayers(); // Clear existing markers
+        data.forEach(vehicle => {
+          var popupContent = `
+            <b>${vehicle.routeLongName ? vehicle.routeLongName + (vehicle.routeShortName ? ' (' + vehicle.routeShortName + ')' : '') : 'N/A'}</b><br>
+            <hr>
+            <b>Vehicle Label:</b> ${vehicle.label || 'N/A'}<br>
+            <b>Vehicle ID:</b> ${vehicle.id || 'N/A'}<br>
+            <b>Speed:</b> ${vehicle.speed !== undefined ? vehicle.speed.toFixed(2) + ' m/s (' + (vehicle.speed * 2.23694).toFixed(2) + ' mph)' : 'N/A'}<br>
+            <b>Latitude:</b> ${vehicle.latitude !== undefined ? vehicle.latitude.toFixed(5) : 'N/A'}<br>
+            <b>Longitude:</b> ${vehicle.longitude !== undefined ? vehicle.longitude.toFixed(5) : 'N/A'}<br>
+            <b>Trip ID:</b> ${vehicle.tripId || 'N/A'}<br>
+            <b>Route ID:</b> ${vehicle.routeId || 'N/A'}<br>
+            <b>Direction ID:</b> ${vehicle.directionId !== undefined ? vehicle.directionId : 'N/A'}<br>
+            <b>Start Date:</b> ${vehicle.startDate || 'N/A'}<br>
+            <b>Start Time:</b> ${vehicle.startTime || 'N/A'}<br>
+            <b>Current Stop Sequence:</b> ${vehicle.currentStopSequence !== undefined ? vehicle.currentStopSequence : 'N/A'}<br>
+            <b>Current Status:</b> ${vehicle.currentStatus || 'N/A'}<br>
+            <b>Timestamp:</b> ${vehicle.vehicleTimestamp ? new Date(parseInt(vehicle.vehicleTimestamp) * 1000).toLocaleString() : 'N/A'}<br>
+            <b>Stop ID:</b> ${vehicle.stopId || 'N/A'}
+          `;
+          
+          // Apply route colors if available
+          let popupStyle = '';
+          if (vehicle.routeColor && vehicle.routeTextColor) {
+            popupStyle = `style="background-color: #${vehicle.routeColor}; color: #${vehicle.routeTextColor};"`;
+          }
+          const fullPopupContent = `<div ${popupStyle}>${popupContent.trim()}</div>`;
+
+          let markerOptions = {};
+          if (vehicle.speed !== undefined && vehicle.speed > SPEED_THRESHOLD_MPS) {
+            markerOptions.icon = highSpeedIcon;
+          } else {
+            markerOptions.icon = normalSpeedIcon;
+            markerOptions.opacity = NORMAL_SPEED_OPACITY;
+          }
+
+          L.marker([vehicle.latitude, vehicle.longitude], markerOptions)
+            .bindPopup(fullPopupContent) 
+            .addTo(vehicleLayer);
+        });
+        resetCountdown(); // Reset countdown after successful fetch
+      })
+      .catch(error => {
+        console.error('Error fetching vehicle data:', error);
+        resetCountdown(); // Also reset countdown on error to avoid negative numbers
+      });
+  }
+
+  fetchVehicleData(); // Initial fetch
+  setInterval(fetchVehicleData, UPDATE_INTERVAL_SECONDS * 1000);
 </script>
 
 </body>
