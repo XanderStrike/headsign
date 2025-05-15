@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -74,9 +73,6 @@ var routesDataOnce sync.Once
 // Global stops data
 var stopsData []StopInfo
 var stopsDataOnce sync.Once
-
-// Global template variable
-var tmpl *template.Template
 
 // Environment variables
 var (
@@ -423,12 +419,7 @@ func vehicleDataHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func mapHandler(w http.ResponseWriter, r *http.Request) {
-	err := tmpl.Execute(w, nil)
-	if err != nil {
-		log.Printf("Error executing template: %v", err)
-		http.Error(w, "Error generating map. Please try again later.", http.StatusInternalServerError)
-		return
-	}
+	http.ServeFile(w, r, "speed.html")
 }
 
 func routesHandler(w http.ResponseWriter, r *http.Request) {
@@ -442,9 +433,9 @@ func routesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(routesList)
 	if err != nil {
-	log.Printf("Error encoding routes data to JSON: %v", err)
-	http.Error(w, "Error encoding data", http.StatusInternalServerError)
-	return
+		log.Printf("Error encoding routes data to JSON: %v", err)
+		http.Error(w, "Error encoding data", http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -476,14 +467,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	tmpl, err = template.ParseFiles("map_template.html")
-	if err != nil {
-		log.Printf("Error parsing template: %v", err)
-		os.Exit(1)
-	}
-
 	routesDataOnce.Do(loadRoutesData)
-	stopsDataOnce.Do(loadStopsData) 
+	stopsDataOnce.Do(loadStopsData)
 
 	http.HandleFunc("/", mapHandler)
 	http.HandleFunc("/vehicledata", vehicleDataHandler)

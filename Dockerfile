@@ -27,7 +27,7 @@ WORKDIR /app
 COPY --from=builder /app/headsign .
 
 # Copy required static files
-COPY map_template.html .
+COPY *.html .
 
 # Expose port 8080
 EXPOSE 8080
