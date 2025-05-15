@@ -37,6 +37,20 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
 
+  // Track page visibility
+  var pageIsVisible = true;
+  
+  // Listen for visibility change events
+  document.addEventListener('visibilitychange', function() {
+    pageIsVisible = document.visibilityState === 'visible';
+    
+    if (pageIsVisible) {
+      // When page becomes visible again, fetch data immediately
+      fetchVehicleData();
+      resetCountdown();
+    }
+  });
+
 
   var vehicleLayer = L.layerGroup().addTo(map);
 
@@ -88,6 +102,13 @@
   }, 1000); // Update countdown every second
 
   function fetchVehicleData() {
+    // Skip fetching if the page is not visible
+    if (!pageIsVisible) {
+      console.log('Skipping vehicle data fetch - page not in focus');
+      resetCountdown(); // Reset countdown anyway to maintain rhythm
+      return;
+    }
+    
     fetch('/vehicledata')
       .then(response => response.json())
       .then(data => {
@@ -140,7 +161,9 @@
   }
 
   fetchVehicleData(); // Initial fetch
-  setInterval(fetchVehicleData, UPDATE_INTERVAL_SECONDS * 1000);
+  
+  // Use a named interval so we can clear it if needed
+  var dataFetchInterval = setInterval(fetchVehicleData, UPDATE_INTERVAL_SECONDS * 1000);
 </script>
 
 </body>
