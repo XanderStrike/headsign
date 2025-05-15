@@ -3,14 +3,13 @@ package main
 import (
 	"encoding/csv"
 	"encoding/json"
-
 	"fmt"
 	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
-	"strconv" // For converting protobuf timestamps (uint64) to string
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,13 +32,12 @@ type VehicleData struct {
 	StartTime           string  `json:"startTime,omitempty"`
 	CurrentStopSequence int     `json:"currentStopSequence,omitempty"`
 	CurrentStatus       string  `json:"currentStatus,omitempty"`
-	VehicleTimestamp    string  `json:"vehicleTimestamp,omitempty"` // Renamed to avoid conflict with cache timestamp
+	VehicleTimestamp    string  `json:"vehicleTimestamp,omitempty"`
 	StopID              string  `json:"stopId,omitempty"`
-	// Fields from routes.txt
-	RouteShortName string `json:"routeShortName,omitempty"`
-	RouteLongName  string `json:"routeLongName,omitempty"`
-	RouteColor     string `json:"routeColor,omitempty"`
-	RouteTextColor string `json:"routeTextColor,omitempty"`
+	RouteShortName      string  `json:"routeShortName,omitempty"`
+	RouteLongName       string  `json:"routeLongName,omitempty"`
+	RouteColor          string  `json:"routeColor,omitempty"`
+	RouteTextColor      string  `json:"routeTextColor,omitempty"`
 }
 
 // RouteInfo struct to hold data from routes.txt
@@ -60,12 +58,16 @@ var routesDataOnce sync.Once
 
 // Global template variable
 var tmpl *template.Template
-var swiftlyAPIKey string // To store the API key from env
+
+// Environment variables
+var (
+	swiftlyAPIKey string // To store the API key from env
+	gtfsURL       string // To store the GTFS URL from env
+)
 
 const (
-	gtfsURL        = "https://api.goswift.ly/real-time/lametro/gtfs-rt-vehicle-positions"
 	cacheDuration  = 10 * time.Second // Adjusted to be just below 180 requests per 15 minutes (1 req / 5 sec)
-	routesFilePath = "/Users/xander/workspace/headsign/metro/routes.txt"
+	routesFilePath = "metro/routes.txt"
 )
 
 // CachedVehicleData holds the processed vehicle data and its timestamp
@@ -79,29 +81,27 @@ var (
 	cacheMutex   sync.Mutex
 )
 
-// loadRoutesData loads and parses the routes.txt file.
-// It's designed to be called once using sync.Once.
 func loadRoutesData() {
 	file, err := os.Open(routesFilePath)
 	if err != nil {
 		log.Printf("Error opening routes.txt: %v. Route information will be unavailable.", err)
-		routesData = make(map[string]RouteInfo) // Initialize to empty map on error
+		routesData = make(map[string]RouteInfo)
 		return
 	}
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-	reader.Comma = ','       // Ensure comma is the delimiter
-	reader.LazyQuotes = true // Handle quotes liberally
+	reader.Comma = ','
+	reader.LazyQuotes = true
 
 	records, err := reader.ReadAll()
 	if err != nil {
 		log.Printf("Error reading CSV from routes.txt: %v. Route information will be unavailable.", err)
-		routesData = make(map[string]RouteInfo) // Initialize to empty map on error
+		routesData = make(map[string]RouteInfo)
 		return
 	}
 
-	if len(records) < 2 { // Expect at least a header and one data row
+	if len(records) < 2 {
 		log.Println("routes.txt is empty or has no data rows. Route information will be unavailable.")
 		routesData = make(map[string]RouteInfo)
 		return
@@ -109,10 +109,8 @@ func loadRoutesData() {
 
 	header := records[0]
 	colIndex := make(map[string]int)
-	// Define UTF-8 BOM
 	const utf8BOM = "\xef\xbb\xbf"
 	for i, colName := range header {
-		// Remove BOM if present from the first column name, then trim space
 		cleanColName := colName
 		if i == 0 {
 			cleanColName = strings.TrimPrefix(cleanColName, utf8BOM)
@@ -120,7 +118,6 @@ func loadRoutesData() {
 		colIndex[strings.TrimSpace(cleanColName)] = i
 	}
 
-	// Verify necessary columns exist
 	requiredCols := []string{"route_id", "route_short_name", "route_long_name", "route_color", "route_text_color"}
 	for _, col := range requiredCols {
 		if _, ok := colIndex[col]; !ok {
@@ -130,7 +127,7 @@ func loadRoutesData() {
 
 	routesData = make(map[string]RouteInfo, len(records)-1)
 	for i, record := range records {
-		if i == 0 { // Skip header row
+		if i == 0 {
 			continue
 		}
 		if len(record) != len(header) {
@@ -141,7 +138,7 @@ func loadRoutesData() {
 		routeID, ok := colIndex["route_id"]
 		if !ok {
 			continue
-		} // Should have been caught by verify
+		}
 
 		shortName := colIndex["route_short_name"]
 		longName := colIndex["route_long_name"]
@@ -165,9 +162,8 @@ func loadRoutesData() {
 	log.Printf("Successfully loaded %d routes from %s", len(routesData), routesFilePath)
 }
 
-// fetchAndProcessGTFSData fetches data from GTFS API and processes it into []VehicleData
 func fetchAndProcessGTFSData(apiKey string) ([]VehicleData, error) {
-	routesDataOnce.Do(loadRoutesData) // Ensure routesData is loaded only once
+	routesDataOnce.Do(loadRoutesData)
 	log.Println("Fetching fresh data from API...")
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", gtfsURL, nil)
@@ -175,7 +171,7 @@ func fetchAndProcessGTFSData(apiKey string) ([]VehicleData, error) {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	req.Header.Set("Accept", "application/x-protobuf") // Changed to protobuf
+	req.Header.Set("Accept", "application/x-protobuf")
 	req.Header.Set("Authorization", apiKey)
 
 	resp, err := client.Do(req)
@@ -213,11 +209,11 @@ func fetchAndProcessGTFSData(apiKey string) ([]VehicleData, error) {
 				label = vehicleDesc.GetLabel()
 			}
 			if label == "" {
-				label = entity.GetId() // Use entity ID if vehicle label is empty
+				label = entity.GetId()
 			}
 
 			speed := 0.0
-			if position.Speed != nil { // Check if Speed is non-zero (protobuf float fields are pointers)
+			if position.Speed != nil {
 				speed = float64(position.GetSpeed())
 			}
 
@@ -255,7 +251,6 @@ func fetchAndProcessGTFSData(apiKey string) ([]VehicleData, error) {
 				vehicleData.StartDate = trip.GetStartDate()
 				vehicleData.StartTime = trip.GetStartTime()
 
-				// Populate route information if available
 				if routeInfo, ok := routesData[trip.GetRouteId()]; ok {
 					vehicleData.RouteShortName = routeInfo.ShortName
 					vehicleData.RouteLongName = routeInfo.LongName
@@ -269,7 +264,6 @@ func fetchAndProcessGTFSData(apiKey string) ([]VehicleData, error) {
 	return processedVehicles, nil
 }
 
-// getCachedVehicleData retrieves vehicle data, using cache if valid
 func getCachedVehicleData(apiKey string) ([]VehicleData, error) {
 	cacheMutex.Lock()
 	if !vehicleCache.Timestamp.IsZero() && time.Since(vehicleCache.Timestamp) < cacheDuration {
@@ -295,7 +289,6 @@ func getCachedVehicleData(apiKey string) ([]VehicleData, error) {
 	return newData, nil
 }
 
-// vehicleDataHandler serves the vehicle data as JSON
 func vehicleDataHandler(w http.ResponseWriter, r *http.Request) {
 	data, err := getCachedVehicleData(swiftlyAPIKey)
 	if err != nil {
@@ -313,9 +306,7 @@ func vehicleDataHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// mapHandler serves the HTML page that will use JavaScript to fetch and display data
 func mapHandler(w http.ResponseWriter, r *http.Request) {
-	// No data needs to be passed to the template directly anymore for markers
 	err := tmpl.Execute(w, nil)
 	if err != nil {
 		log.Printf("Error executing template: %v", err)
@@ -324,11 +315,9 @@ func mapHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// routesHandler serves the route information as JSON
 func routesHandler(w http.ResponseWriter, r *http.Request) {
-	routesDataOnce.Do(loadRoutesData) // Ensure routes data is loaded
+	routesDataOnce.Do(loadRoutesData)
 
-	// Convert map to slice for JSON output
 	var routesList []RouteInfo
 	for _, route := range routesData {
 		routesList = append(routesList, route)
@@ -346,26 +335,30 @@ func routesHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	var err error
 
-	// Get API Key from environment variable
+	// Get environment variables
 	swiftlyAPIKey = os.Getenv("SWIFTLY_API_KEY")
 	if swiftlyAPIKey == "" {
 		log.Println("Error: SWIFTLY_API_KEY environment variable not set.")
 		os.Exit(1)
 	}
 
-	// Parse the HTML template once at startup
-	tmpl, err = template.ParseFiles("/Users/xander/workspace/headsign/map_template.html")
-	if err != nil {
-		log.Printf("Error parsing template: %v", err)
-		os.Exit(1) // If template doesn't parse, we can't serve requests
+	gtfsURL = os.Getenv("GTFS_URL")
+	if gtfsURL == "" {
+		log.Println("Error: GTFS_URL environment variable not set.")
+		os.Exit(1)
 	}
 
-	// Load routes data at startup
+	tmpl, err = template.ParseFiles("map_template.html")
+	if err != nil {
+		log.Printf("Error parsing template: %v", err)
+		os.Exit(1)
+	}
+
 	routesDataOnce.Do(loadRoutesData)
 
 	http.HandleFunc("/", mapHandler)
-	http.HandleFunc("/vehicledata", vehicleDataHandler) // Endpoint for JSON vehicle data
-	http.HandleFunc("/routes", routesHandler)           // New endpoint for routes data
+	http.HandleFunc("/vehicledata", vehicleDataHandler)
+	http.HandleFunc("/routes", routesHandler)
 
 	port := "8080"
 	log.Printf("Server starting on port %s. Access map at /, vehicle data at /vehicledata, and routes data at /routes. Make sure SWIFTLY_API_KEY is set.", port)

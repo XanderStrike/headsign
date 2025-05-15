@@ -1,0 +1,10 @@
+services:
+  headsign:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./metro:/app/metro
+    env_file:
+      - .env
+    restart: unless-stopped
