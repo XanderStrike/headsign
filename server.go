@@ -143,13 +143,13 @@ func loadRoutesData() {
 			continue
 		} // Should have been caught by verify
 
-		shortName, _ := colIndex["route_short_name"]
-		longName, _ := colIndex["route_long_name"]
-		desc, _ := colIndex["route_desc"]
-		routeType, _ := colIndex["route_type"]
-		color, _ := colIndex["route_color"]
-		textColor, _ := colIndex["route_text_color"]
-		url, _ := colIndex["route_url"]
+		shortName := colIndex["route_short_name"]
+		longName := colIndex["route_long_name"]
+		desc := colIndex["route_desc"]
+		routeType := colIndex["route_type"]
+		color := colIndex["route_color"]
+		textColor := colIndex["route_text_color"]
+		url := colIndex["route_url"]
 
 		routesData[record[routeID]] = RouteInfo{
 			RouteID:     record[routeID],
