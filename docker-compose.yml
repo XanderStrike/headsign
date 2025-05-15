@@ -1,6 +1,6 @@
 services:
   headsign:
-    build: .
+    image: docker.io/xanderstrike/headsign
     ports:
       - "8080:8080"
     volumes:
