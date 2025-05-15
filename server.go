@@ -65,7 +65,7 @@ var swiftlyAPIKey string // To store the API key from env
 const (
 	gtfsURL        = "https://api.goswift.ly/real-time/lametro/gtfs-rt-vehicle-positions"
 	cacheDuration  = 10 * time.Second // Adjusted to be just below 180 requests per 15 minutes (1 req / 5 sec)
-	routesFilePath = "/Users/xander/workspace/headsign/gtfs_bus/routes.txt"
+	routesFilePath = "/Users/xander/workspace/headsign/metro/routes.txt"
 )
 
 // CachedVehicleData holds the processed vehicle data and its timestamp
