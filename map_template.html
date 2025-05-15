@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Vehicle Positions Map</title>
+  <title>A Live Map of all LA Metro Buses That Would Not Blow Up If They Were The Bus In The 1994 Motion Picture Speed With Keanu Reeves</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -11,24 +11,29 @@
    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
    crossorigin=""></script>
   <style>
+    body { margin: 0; padding: 0; }
     #map { height: 100vh; }
-    #countdown-overlay {
-      position: absolute;
+    #title-overlay {
+      position: fixed;
       top: 10px;
-      right: 10px;
-      padding: 5px 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 5px 15px;
       background: rgba(255, 255, 255, 0.8);
       border: 1px solid #ccc;
       border-radius: 5px;
-      z-index: 1000; /* Ensure it's above the map tiles */
-      font-family: Arial, sans-serif;
+      z-index: 1000;
+      text-align: center;
+      max-width: 80%;
     }
   </style>
 </head>
 <body>
-
 <div id="map"></div>
-<div id="countdown-overlay">Next update in: <span id="countdown-timer">6</span>s</div>
+<div id="title-overlay">
+  <h1 style="margin: 0; font-size: 1.2em;">A Live Map Of All LA Metro Buses That Would Not Blow Up If They Were The Bus In The 1994 Motion Picture <i>Speed</i> With Keanu Reeves</h1>
+  Next update in: <span id="countdown-timer">6</span>s
+</div>
 
 <script>
   var map = L.map('map').setView([34.0522, -118.2437], 10); // Centered on LA

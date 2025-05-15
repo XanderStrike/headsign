@@ -324,6 +324,25 @@ func mapHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// routesHandler serves the route information as JSON
+func routesHandler(w http.ResponseWriter, r *http.Request) {
+	routesDataOnce.Do(loadRoutesData) // Ensure routes data is loaded
+
+	// Convert map to slice for JSON output
+	var routesList []RouteInfo
+	for _, route := range routesData {
+		routesList = append(routesList, route)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(routesList)
+	if err != nil {
+		log.Printf("Error encoding routes data to JSON: %v", err)
+		http.Error(w, "Error encoding data", http.StatusInternalServerError)
+		return
+	}
+}
+
 func main() {
 	var err error
 
@@ -345,10 +364,11 @@ func main() {
 	routesDataOnce.Do(loadRoutesData)
 
 	http.HandleFunc("/", mapHandler)
-	http.HandleFunc("/vehicledata", vehicleDataHandler) // New endpoint for JSON data
+	http.HandleFunc("/vehicledata", vehicleDataHandler) // Endpoint for JSON vehicle data
+	http.HandleFunc("/routes", routesHandler)           // New endpoint for routes data
 
 	port := "8080"
-	log.Printf("Server starting on port %s. Access map at / and vehicle data at /vehicledata. Make sure SWIFTLY_API_KEY is set.", port)
+	log.Printf("Server starting on port %s. Access map at /, vehicle data at /vehicledata, and routes data at /routes. Make sure SWIFTLY_API_KEY is set.", port)
 	err = http.ListenAndServe(":"+port, nil)
 	if err != nil {
 		log.Printf("Error starting server: %v", err)
