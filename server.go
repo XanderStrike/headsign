@@ -18,6 +18,20 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// StopInfo struct to hold data from stops.txt
+type StopInfo struct {
+	StopID        string  `json:"stop_id"`
+	StopCode      string  `json:"stop_code,omitempty"`
+	StopName      string  `json:"stop_name,omitempty"`
+	StopDesc      string  `json:"stop_desc,omitempty"`
+	StopLat       float64 `json:"stop_lat,omitempty"`
+	StopLon       float64 `json:"stop_lon,omitempty"`
+	StopURL       string  `json:"stop_url,omitempty"`
+	LocationType  string  `json:"location_type,omitempty"`
+	ParentStation string  `json:"parent_station,omitempty"`
+	TpisName      string  `json:"tpis_name,omitempty"`
+}
+
 // VehicleData struct for our JSON endpoint (remains as is for now)
 type VehicleData struct {
 	ID                  string  `json:"id"`
@@ -34,6 +48,7 @@ type VehicleData struct {
 	CurrentStatus       string  `json:"currentStatus,omitempty"`
 	VehicleTimestamp    string  `json:"vehicleTimestamp,omitempty"`
 	StopID              string  `json:"stopId,omitempty"`
+	CurrentStopName     string  `json:"currentStopName,omitempty"`
 	RouteShortName      string  `json:"routeShortName,omitempty"`
 	RouteLongName       string  `json:"routeLongName,omitempty"`
 	RouteColor          string  `json:"routeColor,omitempty"`
@@ -56,6 +71,10 @@ type RouteInfo struct {
 var routesData map[string]RouteInfo
 var routesDataOnce sync.Once
 
+// Global stops data
+var stopsData []StopInfo
+var stopsDataOnce sync.Once
+
 // Global template variable
 var tmpl *template.Template
 
@@ -68,6 +87,7 @@ var (
 const (
 	cacheDuration  = 10 * time.Second // Adjusted to be just below 180 requests per 15 minutes (1 req / 5 sec)
 	routesFilePath = "metro/routes.txt"
+	stopsFilePath  = "metro/stops.txt"
 )
 
 // CachedVehicleData holds the processed vehicle data and its timestamp
@@ -162,8 +182,99 @@ func loadRoutesData() {
 	log.Printf("Successfully loaded %d routes from %s", len(routesData), routesFilePath)
 }
 
+func loadStopsData() {
+	file, err := os.Open(stopsFilePath)
+	if err != nil {
+		log.Printf("Error opening %s: %v. Stops information will be unavailable.", stopsFilePath, err)
+		stopsData = []StopInfo{}
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.Comma = ','
+	reader.LazyQuotes = true
+
+	records, err := reader.ReadAll()
+	if err != nil {
+		log.Printf("Error reading CSV from %s: %v. Stops information will be unavailable.", stopsFilePath, err)
+		stopsData = []StopInfo{}
+		return
+	}
+
+	if len(records) < 2 {
+		log.Printf("%s is empty or has no data rows. Stops information will be unavailable.", stopsFilePath)
+		stopsData = []StopInfo{}
+		return
+	}
+
+	header := records[0]
+	colIndex := make(map[string]int)
+	const utf8BOM = "\xef\xbb\xbf"
+	for i, colName := range header {
+		cleanColName := colName
+		if i == 0 {
+			cleanColName = strings.TrimPrefix(cleanColName, utf8BOM)
+		}
+		colIndex[strings.TrimSpace(cleanColName)] = i
+	}
+
+	// Define expected columns and their corresponding JSON field names (optional, for validation or mapping)
+	// For StopInfo, most fields are straightforward. Lat/Lon need conversion.
+	requiredStopCols := []string{"stop_id", "stop_name", "stop_lat", "stop_lon"} // Minimum required
+	for _, col := range requiredStopCols {
+		if _, ok := colIndex[col]; !ok {
+			log.Printf("%s is missing required column: %s. Stops information may be incomplete.", stopsFilePath, col)
+		}
+	}
+
+	stopsData = make([]StopInfo, 0, len(records)-1)
+	for i, record := range records {
+		if i == 0 { // Skip header row
+			continue
+		}
+		if len(record) != len(header) {
+			log.Printf("Skipping malformed row %d in %s: expected %d fields, got %d", i+1, stopsFilePath, len(header), len(record))
+			continue
+		}
+
+		getColData := func(colName string) string {
+			if idx, ok := colIndex[colName]; ok && idx < len(record) {
+				return record[idx]
+			}
+			return ""
+		}
+
+		stopLat, _ := strconv.ParseFloat(strings.TrimSpace(getColData("stop_lat")), 64)
+		stopLon, _ := strconv.ParseFloat(strings.TrimSpace(getColData("stop_lon")), 64)
+
+		stop := StopInfo{
+			StopID:        getColData("stop_id"),
+			StopCode:      getColData("stop_code"),
+			StopName:      getColData("stop_name"),
+			StopDesc:      getColData("stop_desc"),
+			StopLat:       stopLat,
+			StopLon:       stopLon,
+			StopURL:       getColData("stop_url"),
+			LocationType:  getColData("location_type"),
+			ParentStation: getColData("parent_station"),
+			TpisName:      getColData("tpis_name"),
+		}
+		stopsData = append(stopsData, stop)
+	}
+	log.Printf("Successfully loaded %d stops from %s", len(stopsData), stopsFilePath)
+}
+
 func fetchAndProcessGTFSData(apiKey string) ([]VehicleData, error) {
 	routesDataOnce.Do(loadRoutesData)
+	stopsDataOnce.Do(loadStopsData) // Ensure stops data is loaded for stop name lookup
+
+	// Create a map for quick stop_id to stop_name lookup
+	stopIDToName := make(map[string]string)
+	for _, stop := range stopsData {
+		stopIDToName[stop.StopID] = stop.StopName
+	}
+
 	log.Println("Fetching fresh data from API...")
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", gtfsURL, nil)
@@ -242,6 +353,11 @@ func fetchAndProcessGTFSData(apiKey string) ([]VehicleData, error) {
 				CurrentStatus:       currentStatusStr,
 				VehicleTimestamp:    vehicleTimestamp,
 				StopID:              vehicle.GetStopId(),
+			}
+
+			// Populate CurrentStopName if StopID is available
+			if stopName, ok := stopIDToName[vehicle.GetStopId()]; ok {
+				vehicleData.CurrentStopName = stopName
 			}
 
 			if trip != nil {
@@ -326,8 +442,20 @@ func routesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(routesList)
 	if err != nil {
-		log.Printf("Error encoding routes data to JSON: %v", err)
-		http.Error(w, "Error encoding data", http.StatusInternalServerError)
+	log.Printf("Error encoding routes data to JSON: %v", err)
+	http.Error(w, "Error encoding data", http.StatusInternalServerError)
+	return
+	}
+}
+
+func stopsHandler(w http.ResponseWriter, r *http.Request) {
+	stopsDataOnce.Do(loadStopsData) // Ensure stops data is loaded
+
+	w.Header().Set("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(stopsData)
+	if err != nil {
+		log.Printf("Error encoding stops data to JSON: %v", err)
+		http.Error(w, "Error encoding stops data", http.StatusInternalServerError)
 		return
 	}
 }
@@ -355,13 +483,15 @@ func main() {
 	}
 
 	routesDataOnce.Do(loadRoutesData)
+	stopsDataOnce.Do(loadStopsData) 
 
 	http.HandleFunc("/", mapHandler)
 	http.HandleFunc("/vehicledata", vehicleDataHandler)
 	http.HandleFunc("/routes", routesHandler)
+	http.HandleFunc("/stops", stopsHandler)
 
 	port := "8080"
-	log.Printf("Server starting on port %s. Access map at /, vehicle data at /vehicledata, and routes data at /routes. Make sure SWIFTLY_API_KEY is set.", port)
+	log.Printf("Server starting on port %s. Access map at /, vehicle data at /vehicledata, routes data at /routes, and stops data at /stops. Make sure SWIFTLY_API_KEY is set.", port)
 	err = http.ListenAndServe(":"+port, nil)
 	if err != nil {
 		log.Printf("Error starting server: %v", err)

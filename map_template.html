@@ -134,7 +134,8 @@
             <b>Current Stop Sequence:</b> ${vehicle.currentStopSequence !== undefined ? vehicle.currentStopSequence : 'N/A'}<br>
             <b>Current Status:</b> ${vehicle.currentStatus || 'N/A'}<br>
             <b>Timestamp:</b> ${vehicle.vehicleTimestamp ? new Date(parseInt(vehicle.vehicleTimestamp) * 1000).toLocaleString() : 'N/A'}<br>
-            <b>Stop ID:</b> ${vehicle.stopId || 'N/A'}
+            <b>Stop ID:</b> ${vehicle.stopId || 'N/A'}<br>
+            <b>Stop Name:</b> ${vehicle.currentStopName || 'N/A'}
           `;
           
           // Apply route colors if available

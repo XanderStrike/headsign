@@ -28,7 +28,6 @@ COPY --from=builder /app/headsign .
 
 # Copy required static files
 COPY map_template.html .
-COPY metro/ ./metro/
 
 # Expose port 8080
 EXPOSE 8080
