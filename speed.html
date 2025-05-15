@@ -59,24 +59,23 @@
 
   var vehicleLayer = L.layerGroup().addTo(map);
 
-  // Define a red icon for high-speed vehicles
+  // Define a larger green icon for high-speed vehicles
   var highSpeedIcon = L.icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
+    iconSize: [35, 58], // Made larger
+    iconAnchor: [17, 58], // Adjusted anchor
+    popupAnchor: [1, -54], // Adjusted popup anchor
+    shadowSize: [58, 58] // Adjusted shadow size
   });
 
-  // Define a smaller, translucent icon for normal-speed vehicles
+  // Define a small blue dot icon for normal-speed vehicles
   var normalSpeedIcon = L.icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png', // Default blue marker
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/images/marker-shadow.png',
-    iconSize: [20, 33], // Smaller size (original is 25,41)
-    iconAnchor: [10, 33], // Adjusted anchor for smaller size
-    popupAnchor: [1, -30], // Adjusted popup anchor
-    shadowSize: [33, 33]  // Adjusted shadow size
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png', 
+    iconSize: [15, 25], // Significantly smaller for a dot-like appearance
+    iconAnchor: [7, 25], // Adjusted anchor
+    popupAnchor: [1, -22], // Adjusted popup anchor
+    shadowSize: [25, 25]  // Adjusted shadow size, or remove shadowUrl and shadowSize
   });
 
   const SPEED_THRESHOLD_MPH = 50;
