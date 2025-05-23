@@ -278,7 +278,7 @@ func fetchAndProcessGTFSData(apiKey string) ([]VehicleData, error) {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	req.Header.Set("Accept", "application/x-protobuf")
+	// req.Header.Set("Accept", "application/x-protobuf")
 	req.Header.Set("Authorization", apiKey)
 
 	resp, err := client.Do(req)
