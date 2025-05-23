@@ -37,9 +37,14 @@
       z-index: 1001;
       box-sizing: border-box;
     }
-    #filter-drawer input {
+    #filter-drawer input, #filter-drawer select {
       margin-right: 10px;
       padding: 5px;
+    }
+    .pill-icon {
+      background-color: transparent;
+      border: none;
+      box-shadow: none;
     }
   </style>
 </head>
@@ -81,23 +86,28 @@
   var vehicleLayer = L.layerGroup().addTo(map);
 
   // Define a larger green icon for high-speed vehicles
-  var highSpeedIcon = L.icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.3/images/marker-shadow.png',
-    iconSize: [35, 58], // Made larger
-    iconAnchor: [17, 58], // Adjusted anchor
-    popupAnchor: [1, -54], // Adjusted popup anchor
-    shadowSize: [58, 58] // Adjusted shadow size
-  });
-
-  // Define a small blue dot icon for normal-speed vehicles
-  var normalSpeedIcon = L.icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png', 
-    iconSize: [15, 25], // Significantly smaller for a dot-like appearance
-    iconAnchor: [7, 25], // Adjusted anchor
-    popupAnchor: [1, -22], // Adjusted popup anchor
-    shadowSize: [25, 25]  // Adjusted shadow size, or remove shadowUrl and shadowSize
-  });
+  // Function to create a pill-shaped icon with the route name inside
+  function createPillIcon(routeName, isHighSpeed) {
+    const bgColor = isHighSpeed ? '#2ECC40' : '#FF4136'; // Green for high speed, red for normal
+    const fontSize = '12px';
+    const padding = '4px 8px';
+    const minWidth = '24px';
+    const textAlign = 'center';
+    const borderRadius = '20px'; // Pill shape
+    const color = '#FFFFFF'; // White text
+    const fontWeight = 'bold';
+    
+    return L.divIcon({
+      className: 'pill-icon', // This is used to target with CSS if needed
+      html: `<div style="background-color: ${bgColor}; color: ${color}; padding: ${padding}; 
+                          border-radius: ${borderRadius}; font-size: ${fontSize}; min-width: ${minWidth}; 
+                          text-align: ${textAlign}; font-weight: ${fontWeight}; white-space: nowrap;">
+              ${routeName || '?'}
+             </div>`,
+      iconAnchor: [20, 12],
+      popupAnchor: [0, -10]
+    });
+  }
 
   const SPEED_THRESHOLD_MPH = 50;
   const SPEED_THRESHOLD_MPS = SPEED_THRESHOLD_MPH * 0.44704; // Convert mph to m/s
@@ -219,17 +229,19 @@
           }
           const fullPopupContent = `<div ${popupStyle}>${popupContent.trim()}</div>`;
 
-          let markerOptions = {};
-          if (vehicle.speed !== undefined && vehicle.speed > SPEED_THRESHOLD_MPS) {
-            markerOptions.icon = highSpeedIcon;
-          } else {
-            markerOptions.icon = normalSpeedIcon;
-            markerOptions.opacity = NORMAL_SPEED_OPACITY;
-          }
+          // Marker options are now handled directly in the marker creation
 
-          L.marker([vehicle.latitude, vehicle.longitude], markerOptions)
-            .bindPopup(fullPopupContent) 
-            .addTo(vehicleLayer);
+          const isHighSpeed = vehicle.speed !== undefined && vehicle.speed > SPEED_THRESHOLD_MPS;
+          const routeName = vehicle.routeShortName || '';
+          
+          const pillIcon = createPillIcon(routeName, isHighSpeed);
+          
+          let marker = L.marker([vehicle.latitude, vehicle.longitude], {
+            icon: pillIcon,
+            opacity: isHighSpeed ? 1.0 : NORMAL_SPEED_OPACITY
+          })
+          .bindPopup(fullPopupContent)
+          .addTo(vehicleLayer);
         });
         resetCountdown(); // Reset countdown after successful fetch
       })
