@@ -26,6 +26,21 @@
       text-align: center;
       max-width: 80%;
     }
+    #filter-drawer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.9);
+      border-top: 1px solid #ccc;
+      padding: 10px;
+      z-index: 1001;
+      box-sizing: border-box;
+    }
+    #filter-drawer input {
+      margin-right: 10px;
+      padding: 5px;
+    }
   </style>
 </head>
 <body>
@@ -33,6 +48,12 @@
 <div id="title-overlay">
   <h1 style="margin: 0; font-size: 1.2em;">A Live Map Of LA Metro Buses That Would Not Blow Up If They Were The Bus In The 1994 Motion Picture <i>Speed</i> Starring Keanu Reeves</h1>
   Next update in: <span id="countdown-timer">6</span>s
+</div>
+
+<div id="filter-drawer">
+  <strong>Filters:</strong>
+  <select id="route-short-name-filter"><option value="">All Route Short Names</option></select>
+  <select id="route-long-name-filter"><option value="">All Route Long Names</option></select>
 </div>
 
 <script>
@@ -85,6 +106,43 @@
   const UPDATE_INTERVAL_SECONDS = 15;
   let countdownValue = UPDATE_INTERVAL_SECONDS;
   const countdownTimerElement = document.getElementById('countdown-timer');
+  const routeShortNameFilterElement = document.getElementById('route-short-name-filter');
+  const routeLongNameFilterElement = document.getElementById('route-long-name-filter');
+
+  let allRouteShortNames = new Set();
+  let allRouteLongNames = new Set();
+
+  function populateFilterDropdowns(data) {
+    const currentShortFilter = routeShortNameFilterElement.value;
+    const currentLongFilter = routeLongNameFilterElement.value;
+
+    allRouteShortNames.clear();
+    allRouteLongNames.clear();
+    data.forEach(vehicle => {
+      if (vehicle.routeShortName) allRouteShortNames.add(vehicle.routeShortName);
+      if (vehicle.routeLongName) allRouteLongNames.add(vehicle.routeLongName);
+    });
+
+    // Populate short name dropdown
+    routeShortNameFilterElement.innerHTML = '<option value="">All Route Short Names</option>';
+    Array.from(allRouteShortNames).sort().forEach(name => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      routeShortNameFilterElement.appendChild(option);
+    });
+    routeShortNameFilterElement.value = currentShortFilter;
+
+    // Populate long name dropdown
+    routeLongNameFilterElement.innerHTML = '<option value="">All Route Long Names</option>';
+    Array.from(allRouteLongNames).sort().forEach(name => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      routeLongNameFilterElement.appendChild(option);
+    });
+    routeLongNameFilterElement.value = currentLongFilter;
+  }
 
   function updateCountdownDisplay() {
     countdownTimerElement.textContent = countdownValue;
@@ -111,12 +169,29 @@
       resetCountdown(); // Reset countdown anyway to maintain rhythm
       return;
     }
+
+    const routeShortNameFilter = routeShortNameFilterElement.value;
+    const routeLongNameFilter = routeLongNameFilterElement.value;
     
     fetch('/vehicledata')
       .then(response => response.json())
       .then(data => {
+        populateFilterDropdowns(data); // Populate dropdowns with all available routes
         vehicleLayer.clearLayers(); // Clear existing markers
-        data.forEach(vehicle => {
+
+        const filteredData = data.filter(vehicle => {
+          const routeShortName = vehicle.routeShortName || '';
+          const routeLongName = vehicle.routeLongName || '';
+
+          // Filter logic: if a filter is set, the vehicle's property must match it.
+          // If a filter is not set (i.e., value is ""), it doesn't constrain the results.
+          const shortNameMatch = (routeShortNameFilter === '' || routeShortName === routeShortNameFilter);
+          const longNameMatch = (routeLongNameFilter === '' || routeLongName === routeLongNameFilter);
+
+          return shortNameMatch && longNameMatch;
+        });
+
+        filteredData.forEach(vehicle => {
           var popupContent = `
             <b>${vehicle.routeLongName ? vehicle.routeLongName + (vehicle.routeShortName ? ' (' + vehicle.routeShortName + ')' : '') : 'N/A'}</b><br>
             <hr>
@@ -168,6 +243,10 @@
   
   // Use a named interval so we can clear it if needed
   var dataFetchInterval = setInterval(fetchVehicleData, UPDATE_INTERVAL_SECONDS * 1000);
+
+  // Add event listeners to filter inputs
+  routeShortNameFilterElement.addEventListener('change', fetchVehicleData);
+  routeLongNameFilterElement.addEventListener('change', fetchVehicleData);
 </script>
 
 </body>
